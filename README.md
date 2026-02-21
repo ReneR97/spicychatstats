@@ -96,22 +96,46 @@ In your terminal (make sure you're in the project folder), run:
 node index.js
 ```
 
-You'll see output like this:
+**First run** — When there's no `aggregated.json` yet, the script does a full crawl of all your characters:
 
 ```
-Fetching conversations (page 1, found 100)...
-Fetching conversations (page 2, found 100)...
-...
-Processing character 1/150: CharacterName...
-Processing character 2/150: AnotherCharacter...
-...
-Done! Saved data for 150 characters to aggregated.json
+=== SpicyChat Data Aggregator ===
+
+[Step 1] Fetching all conversations...
+  Fetching conversations page 1...
+  ...
+[Info] Found 150 unique characters from the API.
+
+  (1/150) Processing "CharacterA"...
+  (2/150) Processing "CharacterB"...
+  ...
+=== Done! Data saved to aggregated.json ===
+```
+
+**Subsequent runs** — When `aggregated.json` already exists, the script is smart about it: it checks each character for new conversations and only recrawls what has changed:
+
+```
+=== SpicyChat Data Aggregator ===
+
+[Info] Found 150 unique characters from the API.
+  Loaded 150 existing characters from aggregated.json
+
+  (1/150) ⏭  Skipping "CharacterA" (3 convos, unchanged)
+  (2/150) 🔄 Updating "CharacterB" (2 → 3 convos)
+  (3/150) ✨ New character "CharacterC" — crawling...
+  ...
+
+── Incremental summary ──
+  ✨ New:       1
+  🔄 Updated:   3
+  ⏭  Skipped:   146
 ```
 
 > **⏳ How long does it take?**
-> It depends on how many characters you've chatted with. The script waits 200ms between each request to avoid overloading the server. For ~150 characters, expect about **1-2 minutes**.
+> - **First run:** Depends on how many characters you have. For ~150 characters, expect about **1-2 minutes**.
+> - **Later runs:** Characters without changes are skipped, so updates are faster.
 
-> **🔄 Run it again anytime** to update your data with new conversations.
+> **💡 Want a completely fresh dataset?** Just delete `aggregated.json` and run the script again.
 
 ---
 

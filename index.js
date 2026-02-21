@@ -1,10 +1,17 @@
 import fs from 'fs';
 import axios from 'axios';
 
-const BASE_URL = 'https://prod.nd-api.com/v2';
-const BEARER_TOKEN = 'YOUR_BEARER_TOKEN_HERE';
+// =============================================
+// CONFIGURATION
+// =============================================
 
-const DELAY_MS = 250;
+const BASE_URL = 'https://prod.nd-api.com/v2';
+const BEARER_TOKEN = '';
+
+
+
+const DELAY_MS = 200;
+const OUTPUT_PATH = 'aggregated.json';
 const HEADERS = {
     'Authorization': `Bearer ${BEARER_TOKEN}`,
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
@@ -18,8 +25,12 @@ const HEADERS = {
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// =============================================
+// API FUNCTIONS
+// =============================================
+
 /**
- * Step 1: Fetch ALL conversations with pagination.
+ * Fetch ALL conversations with pagination.
  * Returns a flat array of all conversation objects.
  */
 async function fetchAllConversations() {
@@ -39,16 +50,13 @@ async function fetchAllConversations() {
 
         allConversations.push(...conversations);
 
-        // Find the entry with is_last_id: true (the last element)
         const lastEntry = conversations.find(c => c.is_last_id === true);
         if (lastEntry) {
             lastId = lastEntry.character_id;
         } else {
-            // No more pages
             break;
         }
 
-        // If we got fewer than 25, we've reached the end
         if (conversations.length < 25) break;
 
         page++;
@@ -60,14 +68,13 @@ async function fetchAllConversations() {
 }
 
 /**
- * Step 2: For a character, fetch all their conversations with details.
+ * For a character, fetch all their conversations with details.
  */
 async function fetchCharacterConversations(characterId) {
     const url = `${BASE_URL}/characters/${characterId}/conversations?limit=100`;
     const response = await axios.get(url, { headers: HEADERS });
     const conversations = response.data;
 
-    // Return conversation details: id, createdAt, message_count
     return conversations.map(c => ({
         id: c.id,
         createdAt: c.createdAt,
@@ -76,7 +83,7 @@ async function fetchCharacterConversations(characterId) {
 }
 
 /**
- * Step 3: Fetch character details (we only need tags).
+ * Fetch character details (tags, etc.).
  */
 async function fetchCharacterDetails(characterId) {
     const url = `${BASE_URL}/characters/${characterId}`;
@@ -85,12 +92,56 @@ async function fetchCharacterDetails(characterId) {
 }
 
 /**
- * Main aggregation logic.
+ * Fully crawl a single character: conversations + details.
  */
+async function crawlCharacter(char) {
+    const conversations = await fetchCharacterConversations(char.character_id);
+    await sleep(DELAY_MS);
+
+    const details = await fetchCharacterDetails(char.character_id);
+    await sleep(DELAY_MS);
+
+    return {
+        character_id: char.character_id,
+        name: char.name,
+        title: char.title,
+        avatar_url: char.avatar_url,
+        tags: details.tags || [],
+        conversations: conversations,
+        message_counts: conversations.map(c => c.message_count),
+        total_conversations: conversations.length,
+    };
+}
+
+// =============================================
+// LOAD EXISTING DATA (for incremental mode)
+// =============================================
+
+function loadExistingData() {
+    if (!fs.existsSync(OUTPUT_PATH)) return new Map();
+    try {
+        const raw = fs.readFileSync(OUTPUT_PATH, 'utf-8');
+        const arr = JSON.parse(raw);
+        const map = new Map();
+        for (const entry of arr) {
+            map.set(entry.character_id, entry);
+        }
+        console.log(`  Loaded ${map.size} existing characters from ${OUTPUT_PATH}`);
+        return map;
+    } catch (err) {
+        console.warn(`  Could not load existing data: ${err.message}`);
+        return new Map();
+    }
+}
+
+// =============================================
+// MAIN AGGREGATION
+// =============================================
+
 async function aggregate() {
     console.log('=== SpicyChat Data Aggregator ===\n');
 
-    // Step 1: Fetch all conversations
+    // Step 1: Fetch all conversations from the API
     console.log('[Step 1] Fetching all conversations...');
     const allConversations = await fetchAllConversations();
 
@@ -109,58 +160,104 @@ async function aggregate() {
     }
 
     const uniqueCharacters = Array.from(characterMap.values());
-    console.log(`\n[Info] Found ${uniqueCharacters.length} unique characters.\n`);
+    console.log(`\n[Info] Found ${uniqueCharacters.length} unique characters from the API.\n`);
 
-    // Step 2 & 3: Enrich each character with message counts and tags
+    // Load existing data (auto-detects: if aggregated.json exists, runs incrementally)
+    const existingData = loadExistingData();
+    const isIncremental = existingData.size > 0;
+
+    // Stats counters
+    let skipped = 0;
+    let updated = 0;
+    let added = 0;
+
+    // Step 2 & 3: Process each character
     const results = [];
 
     for (let i = 0; i < uniqueCharacters.length; i++) {
         const char = uniqueCharacters[i];
-        console.log(`[Step 2+3] (${i + 1}/${uniqueCharacters.length}) Processing "${char.name}"...`);
+        const existing = existingData.get(char.character_id);
+        const label = `(${i + 1}/${uniqueCharacters.length})`;
 
         try {
-            // Fetch conversation details
-            const conversations = await fetchCharacterConversations(char.character_id);
-            await sleep(DELAY_MS);
+            if (!existing) {
+                // New character (or first run) — full crawl
+                if (isIncremental) {
+                    console.log(`  ${label} ✨ New character "${char.name}" — crawling...`);
+                    added++;
+                } else {
+                    console.log(`  ${label} Processing "${char.name}"...`);
+                }
+                results.push(await crawlCharacter(char));
 
-            // Fetch character tags
-            const details = await fetchCharacterDetails(char.character_id);
-            await sleep(DELAY_MS);
+            } else {
+                // Existing character — check for new conversations
+                const freshConvs = await fetchCharacterConversations(char.character_id);
+                await sleep(DELAY_MS);
 
-            results.push({
-                character_id: char.character_id,
-                name: char.name,
-                title: char.title,
-                avatar_url: char.avatar_url,
-                tags: details.tags || [],
-                conversations: conversations,
-                message_counts: conversations.map(c => c.message_count),
-                total_conversations: conversations.length,
-            });
+                // Compare conversation IDs with stored ones
+                const storedIds = new Set((existing.conversations || []).map(c => c.id));
+                const freshIds = new Set(freshConvs.map(c => c.id));
+                const hasNewConvs = freshConvs.some(c => !storedIds.has(c.id)) || freshIds.size !== storedIds.size;
 
+                if (!hasNewConvs) {
+                    // Same conversations → skip
+                    console.log(`  ${label} ⏭  Skipping "${char.name}" (${storedIds.size} convos, unchanged)`);
+                    results.push(existing);
+                    skipped++;
+                } else {
+                    // New or different conversations → recrawl details too
+                    console.log(`  ${label} 🔄 Updating "${char.name}" (${storedIds.size} → ${freshIds.size} convos)`);
+                    const details = await fetchCharacterDetails(char.character_id);
+                    await sleep(DELAY_MS);
+
+                    results.push({
+                        character_id: char.character_id,
+                        name: char.name,
+                        title: char.title,
+                        avatar_url: char.avatar_url,
+                        tags: details.tags || [],
+                        conversations: freshConvs,
+                        message_counts: freshConvs.map(c => c.message_count),
+                        total_conversations: freshConvs.length,
+                    });
+                    updated++;
+                }
+            }
         } catch (error) {
-            console.error(`  Error processing "${char.name}": ${error.message}`);
-            // Still add the character with what we have
-            results.push({
-                character_id: char.character_id,
-                name: char.name,
-                title: char.title,
-                avatar_url: char.avatar_url,
-                tags: [],
-                message_counts: [],
-                total_conversations: 0,
-                error: error.message,
-            });
+            console.error(`  ${label} ❌ Error with "${char.name}": ${error.message}`);
+            if (existing) {
+                results.push(existing);
+            } else {
+                results.push({
+                    character_id: char.character_id,
+                    name: char.name,
+                    title: char.title,
+                    avatar_url: char.avatar_url,
+                    tags: [],
+                    conversations: [],
+                    message_counts: [],
+                    total_conversations: 0,
+                    error: error.message,
+                });
+            }
         }
     }
 
     // Step 4: Write output
-    const outputPath = 'aggregated.json';
-    fs.writeFileSync(outputPath, JSON.stringify(results, null, 2));
-    console.log(`\n=== Done! Data saved to ${outputPath} ===`);
+    fs.writeFileSync(OUTPUT_PATH, JSON.stringify(results, null, 2));
+
+    console.log(`\n=== Done! Data saved to ${OUTPUT_PATH} ===`);
     console.log(`Total unique characters: ${results.length}`);
     console.log(`Total conversations: ${results.reduce((sum, r) => sum + r.total_conversations, 0)}`);
-    console.log(`Total messages: ${results.reduce((sum, r) => sum + r.message_counts.reduce((a, b) => a + b, 0), 0)}`);
+    console.log(`Total messages: ${results.reduce((sum, r) => sum + (r.message_counts || []).reduce((a, b) => a + b, 0), 0)}`);
+
+    if (isIncremental) {
+        console.log(`\n── Incremental summary ──`);
+        console.log(`  ✨ New:       ${added}`);
+        console.log(`  🔄 Updated:   ${updated}`);
+        console.log(`  ⏭  Skipped:   ${skipped}`);
+    }
 }
 
 aggregate().catch(err => {
