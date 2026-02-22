@@ -88,13 +88,15 @@ The script needs your SpicyChat login token to access your data. Here's how to g
 
 ---
 
-## ▶️ Step 3: Run the Script
+## ▶️ Step 3: Run the Script & View Dashboard
 
 In your terminal (make sure you're in the project folder), run:
 
 ```bash
-node index.js
+npm run start
 ```
+
+This will run the data collection script and then **automatically open your dashboard** in your browser.
 
 **First run** — When there's no `aggregated.json` yet, the script does a full crawl of all your characters:
 
@@ -139,25 +141,21 @@ node index.js
 
 ---
 
-## 📊 Step 4: View Your Dashboard
+## 👥 Step 4: Updating and Viewing Your Data
 
-Now for the fun part! You need a simple web server to view the dashboard. Run this in your terminal:
-
+### To update your data and open the dashboard:
+Run this command in your terminal:
 ```bash
-npx -y http-server . -p 8080 -c-1
+npm run start
 ```
+This runs the collection script first and then automatically launches the dashboard.
 
-> **What does this do?** It starts a tiny web server on your computer. The `-c-1` part disables caching so you always see the latest data.
-
-Then open your browser and go to:
-
+### To just open the dashboard (without updating):
+If you haven't made any new chats and just want to see your existing stats, run:
+```bash
+npm run server
 ```
-http://localhost:8080/stats.html
-```
-
-🎉 **That's it!** Your dashboard should load with all your stats.
-
-> **To stop the server**, go back to your terminal and press `Ctrl + C`.
+This skips the data collection and just opens your dashboard.
 
 ---
 
