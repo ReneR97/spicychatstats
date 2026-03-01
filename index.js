@@ -195,19 +195,38 @@ async function aggregate() {
                 const freshConvs = await fetchCharacterConversations(char.character_id);
                 await sleep(DELAY_MS);
 
-                // Compare conversation IDs with stored ones
-                const storedIds = new Set((existing.conversations || []).map(c => c.id));
-                const freshIds = new Set(freshConvs.map(c => c.id));
-                const hasNewConvs = freshConvs.some(c => !storedIds.has(c.id)) || freshIds.size !== storedIds.size;
+                // Check if any conversations have new messages or if there are new conversations
+                const storedConvsMap = new Map((existing.conversations || []).map(c => [c.id, c.message_count || 0]));
+                let hasChanges = false;
 
-                if (!hasNewConvs) {
-                    // Same conversations → skip
-                    console.log(`  ${label} ⏭  Skipping "${char.name}" (${storedIds.size} convos, unchanged)`);
+                if (freshConvs.length !== storedConvsMap.size) {
+                    hasChanges = true;
+                } else {
+                    for (const freshConv of freshConvs) {
+                        const storedCount = storedConvsMap.get(freshConv.id);
+                        if (storedCount === undefined || storedCount !== freshConv.message_count) {
+                            hasChanges = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!hasChanges) {
+                    // Same conversations and message counts → skip
+                    console.log(`  ${label} ⏭  Skipping "${char.name}" (${storedConvsMap.size} convos, unchanged)`);
                     results.push(existing);
                     skipped++;
                 } else {
-                    // New or different conversations → recrawl details too
-                    console.log(`  ${label} 🔄 Updating "${char.name}" (${storedIds.size} → ${freshIds.size} convos)`);
+                    // New/different conversations OR new messages → recrawl details too
+                    const storedMsgCount = (existing.message_counts || []).reduce((a, b) => a + b, 0);
+                    const freshMsgCount = freshConvs.map(c => c.message_count).reduce((a, b) => a + b, 0);
+
+                    if (freshConvs.length !== storedConvsMap.size) {
+                        console.log(`  ${label} 🔄 Updating "${char.name}" (${storedConvsMap.size} → ${freshConvs.length} convos)`);
+                    } else {
+                        console.log(`  ${label} 🔄 Updating "${char.name}" (${storedMsgCount} → ${freshMsgCount} messages)`);
+                    }
+
                     const details = await fetchCharacterDetails(char.character_id);
                     await sleep(DELAY_MS);
 

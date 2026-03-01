@@ -88,15 +88,13 @@ The script needs your SpicyChat login token to access your data. Here's how to g
 
 ---
 
-## ▶️ Step 3: Run the Script & View Dashboard
+## ▶️ Step 3: Run the Script
 
 In your terminal (make sure you're in the project folder), run:
 
 ```bash
-npm run start
+node index.js
 ```
-
-This will run the data collection script and then **automatically open your dashboard** in your browser.
 
 **First run** — When there's no `aggregated.json` yet, the script does a full crawl of all your characters:
 
@@ -114,7 +112,7 @@ This will run the data collection script and then **automatically open your dash
 === Done! Data saved to aggregated.json ===
 ```
 
-**Subsequent runs** — When `aggregated.json` already exists, the script is smart about it: it checks each character for new conversations and only recrawls what has changed:
+**Subsequent runs** — When `aggregated.json` already exists, the script is smart about it: it checks each character for new conversations **or new messages**, and only recrawls what has changed:
 
 ```
 === SpicyChat Data Aggregator ===
@@ -124,13 +122,13 @@ This will run the data collection script and then **automatically open your dash
 
   (1/150) ⏭  Skipping "CharacterA" (3 convos, unchanged)
   (2/150) 🔄 Updating "CharacterB" (2 → 3 convos)
-  (3/150) ✨ New character "CharacterC" — crawling...
+  (3/150) 🔄 Updating "CharacterC" (45 → 52 messages)
   ...
 
 ── Incremental summary ──
-  ✨ New:       1
-  🔄 Updated:   3
-  ⏭  Skipped:   146
+  ✨ New:       0
+  🔄 Updated:   2
+  ⏭  Skipped:   148
 ```
 
 > **⏳ How long does it take?**
@@ -141,21 +139,25 @@ This will run the data collection script and then **automatically open your dash
 
 ---
 
-## 👥 Step 4: Updating and Viewing Your Data
+## 📊 Step 4: View Your Dashboard
 
-### To update your data and open the dashboard:
-Run this command in your terminal:
-```bash
-npm run start
-```
-This runs the collection script first and then automatically launches the dashboard.
+Now for the fun part! You need a simple web server to view the dashboard. Run this in your terminal:
 
-### To just open the dashboard (without updating):
-If you haven't made any new chats and just want to see your existing stats, run:
 ```bash
-npm run server
+npx -y http-server . -p 8080 -c-1
 ```
-This skips the data collection and just opens your dashboard.
+
+> **What does this do?** It starts a tiny web server on your computer. The `-c-1` part disables caching so you always see the latest data.
+
+Then open your browser and go to:
+
+```
+http://localhost:8080/stats.html
+```
+
+🎉 **That's it!** Your dashboard should load with all your stats.
+
+> **To stop the server**, go back to your terminal and press `Ctrl + C`.
 
 ---
 
